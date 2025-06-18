@@ -1,0 +1,177 @@
+volumes:
+
+  tvshows_volume:
+    driver: local
+    driver_opts:
+      type: none
+      device: $PATH_TO_TVSHOWS
+      o: bind
+
+  radarr_config_volume:
+    # driver: local
+    # driver_opts:
+    #   type: none
+    #   device: ./newone/
+    #   o: bind
+
+  sonarr_config_volume:
+  prowlarr_config_volume:
+  jellyfin_config_volume:
+  transmission_config_volume:
+
+  movies_volume:
+    driver: local
+    driver_opts:
+      type: none
+      device: $PATH_TO_MOVIES
+      o: bind
+
+  torrent_downloads_volume:
+    driver: local
+    driver_opts:
+      type: none
+      device: $PATH_TO_TORRENT_DOWNLOADS
+      o: bind
+
+  torrent_watch_volume:
+    driver: local
+    driver_opts:
+      type: none
+      device: $PATH_TO_TORRENT_WATCH
+      o: bind
+
+services:
+
+  # *arr config manager
+  flemmarr:
+    container_name: flemmarr
+    image: pierremesure/flemmarr
+    volumes:
+      - ${PWD}/flemmarr/config.yaml:/config/config.yml
+      - ${PWD}/flemmarr/update_config.py:/tmp/update_config.py
+      - radarr_config_volume:/radarr_config
+      - sonarr_config_volume:/sonarr_config
+    command: sh -c "python /tmp/update_config.py && python run.py"
+    environment:
+      - TRANSMISSION_USERNAME=${TRANSMISSION_USERNAME}
+      - TRANSMISSION_PASSWORD=${TRANSMISSION_PASSWORD}
+    depends_on:
+      radarr:
+        condition: service_healthy
+      sonarr:
+        condition: service_healthy
+      prowlarr:
+        condition: service_healthy
+      transmission:
+        condition: service_healthy
+
+  # media server
+  jellyfin:
+    image: 'lscr.io/linuxserver/jellyfin:latest'
+    environment:
+      - TZ=${TZ:-America/Toronto}
+      # - JELLYFIN_PublishedServerUrl=$JELLYFIN_PUBLISHED_SERVER_URL
+    ports:
+      - '8096:8096'
+    volumes:
+      - 'jellyfin_config_volume:/config'
+      - 'tvshows_volume:/data/tvshows'
+      - 'movies_volume:/data/movies'
+    healthcheck:
+      test:
+        - CMD
+        - curl
+        - '-f'
+        - 'http://127.0.0.1:8096'
+      interval: 2s
+      timeout: 10s
+      retries: 15
+
+  # movie downloader
+  radarr:
+    image: 'lscr.io/linuxserver/radarr:latest'
+    ports:
+      - '7878:7878'
+    environment:
+      - TZ=${TZ:-America/Toronto}
+      # - RADARR__API_KEY=123456789
+      # - PUID=501
+      # - PGID=20
+    volumes:
+      - 'radarr_config_volume:/config'
+      # - ${PWD}/newone/config.xml:/config/config.xml
+      - 'movies_volume:/movies'
+      - 'torrent_downloads_volume:/downloads'
+    healthcheck:
+      test:
+        - CMD
+        - curl
+        - '-f'
+        - 'http://localhost:7878/ping'
+      interval: 2s
+      timeout: 10s
+      retries: 15
+
+  # tv show downloader
+  sonarr:
+    image: 'lscr.io/linuxserver/sonarr:latest'
+    ports:
+      - '8989:8989'
+    environment:
+      - TZ=${TZ:-America/Toronto}
+    volumes:
+      - 'sonarr_config_volume:/config'
+      - 'tvshows_volume:/tvshows'
+      - 'torrent_downloads_volume:/downloads'
+    healthcheck:
+      test:
+        - CMD
+        - curl
+        - '-f'
+        - 'http://localhost:8989/ping'
+      interval: 2s
+      timeout: 10s
+      retries: 15
+
+  # index manager
+  prowlarr:
+    image: 'lscr.io/linuxserver/prowlarr:latest'
+    ports:
+      - '9696:9696'
+    environment:
+      - TZ=${TZ:-America/Toronto}
+    volumes:
+      - 'prowlarr_config_volume:/config'
+    healthcheck:
+      test:
+        - CMD
+        - curl
+        - '-f'
+        - 'http://localhost:9696/ping'
+      interval: 2s
+      timeout: 10s
+      retries: 15
+
+  # torrent client
+  transmission:
+    image: 'lscr.io/linuxserver/transmission:latest'
+    ports:
+      - '9091:9091'
+    environment:
+      - 'USER=${TRANSMISSION_USERNAME}'
+      - 'PASS=${TRANSMISSION_PASSWORD}'
+    volumes:
+      - 'transmission_config_volume:/config'
+      - 'torrent_downloads_volume:/downloads'
+      - 'torrent_watch_volume:/watch'
+    healthcheck:
+      test:
+        - CMD
+        - curl
+        - '-sSfL'
+        - '-u'
+        - '${TRANSMISSION_USERNAME}:${TRANSMISSION_PASSWORD}'
+        - 'http://localhost:9091/'
+      interval: 30s
+      timeout: 10s
+      retries: 3
