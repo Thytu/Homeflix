@@ -1,6 +1,6 @@
 # Homeflix
 
-Fully-automated, self-hosted media server setup using *arr suite.
+Fully-automated, self-hosted media server using *arr suite.
 
 ## Features
 
